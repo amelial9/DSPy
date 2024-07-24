@@ -12,7 +12,7 @@ import json
 
 
 
-#openai.api_key = 'sk-proj-Feu5Pk0cStDD97DEmQT4T3BlbkFJo2wGkGS65oRLKtg0YxqK'
+openai.api_key = 'sk-proj-Feu5Pk0cStDD97DEmQT4T3BlbkFJo2wGkGS65oRLKtg0YxqK'
 turbo = dspy.OpenAI(model='gpt-3.5-turbo')
 
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
