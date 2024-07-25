@@ -4,15 +4,10 @@ import dspy
 
 import openai
 
-import requests
-import json
 
 
 
-
-
-
-openai.api_key = 'sk-proj-Feu5Pk0cStDD97DEmQT4T3BlbkFJo2wGkGS65oRLKtg0YxqK'
+openai.api_key = 'sk-None-ObHsoP2TUnL23IfUTCWQT3BlbkFJ68zAZCcU4z6VlLMjKGB8'
 turbo = dspy.OpenAI(model='gpt-3.5-turbo')
 
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
