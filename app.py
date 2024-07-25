@@ -4,14 +4,29 @@ import dspy
 
 import openai
 
+from dspy.teleprompt import BootstrapFewShot
 
 
 
+'''
 openai.api_key = 'sk-None-ObHsoP2TUnL23IfUTCWQT3BlbkFJ68zAZCcU4z6VlLMjKGB8'
 turbo = dspy.OpenAI(model='gpt-3.5-turbo')
 
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
 dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
+
+'''
+
+turbo = dspy.AzureOpenAI(
+    api_base="https://bxaisc.openai.azure.com/",
+    api_version="2023-05-15",
+    model="gpt-35-turbo",
+    api_key="9cd7d887a86a4f34932bd8f2231b1522"
+)
+colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
+
+
 '''
 
 
@@ -101,8 +116,6 @@ data = [
 trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in data]
 
 
-
-
 train_example = trainset[0]
 
 
@@ -110,15 +123,55 @@ class BasicQA(dspy.Signature):
     """Answer questions"""
 
     question = dspy.InputField()
-    answer = dspy.OutputField(desc="Answer questions like Donald Trump")
+    answer = dspy.OutputField()
+
+class GenerateAnswer(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    context = dspy.InputField(desc="may contain relevant facts")
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
 
 
+class RAG(dspy.Module):
+    def __init__(self, num_passages=3):
+        super().__init__()
+
+        self.retrieve = dspy.Retrieve(k=num_passages)
+        self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
+
+    def forward(self, question):
+        context = self.retrieve(question).passages
+        prediction = self.generate_answer(context=context, question=question)
+        return dspy.Prediction(context=context, answer=prediction.answer)
+
+
+def validate_context_and_answer(example, pred, trace=None):
+    answer_EM = dspy.evaluate.answer_exact_match(example, pred)
+    answer_PM = dspy.evaluate.answer_passage_match(example, pred)
+    return answer_EM and answer_PM
+
+
+teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
+compiled_rag = teleprompter.compile(RAG(), trainset=trainset)
+
+
+
+'''
 generate_answer = dspy.Predict(BasicQA)
-
 
 pred = generate_answer(question=train_example.question)
 
-
-# Print the input and the prediction.
 print(f"Question: {train_example.question}")
 print(f"Predicted Answer: {pred.answer}")
+'''
+
+
+
+my_question = "what's your goal as president during your term of service?"
+
+pred = compiled_rag(my_question)
+
+print(f"Question: {my_question}")
+print(f"Predicted Answer: {pred.answer}")
+print(f"Retrieved Contexts (truncated): {[c[:200] + '...' for c in pred.context]}")
