@@ -6,6 +6,8 @@ import openai
 
 from dspy.teleprompt import BootstrapFewShot
 
+from snownlp import SnowNLP
+
 
 
 '''
@@ -115,10 +117,9 @@ data = [
 
 trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in data]
 
-
 train_example = trainset[0]
 
-
+'''
 class BasicQA(dspy.Signature):
     """Answer questions"""
 
@@ -156,18 +157,6 @@ teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
 compiled_rag = teleprompter.compile(RAG(), trainset=trainset)
 
 
-
-'''
-generate_answer = dspy.Predict(BasicQA)
-
-pred = generate_answer(question=train_example.question)
-
-print(f"Question: {train_example.question}")
-print(f"Predicted Answer: {pred.answer}")
-'''
-
-
-
 my_question = "what's your goal as president during your term of service?"
 
 pred = compiled_rag(my_question)
@@ -175,3 +164,48 @@ pred = compiled_rag(my_question)
 print(f"Question: {my_question}")
 print(f"Predicted Answer: {pred.answer}")
 print(f"Retrieved Contexts (truncated): {[c[:200] + '...' for c in pred.context]}")
+'''
+
+
+
+def analyze_tone(text):
+    s = SnowNLP(text)
+    return s.sentiments
+
+def compare_tone_style(text, style):
+    text_tone = analyze_tone(text)
+    style_tone = analyze_tone(style)
+    return abs(text_tone - style_tone) < 0.1
+
+
+with open("/Users/ameliali/Desktop/5.txt", 'r', encoding = 'utf-8') as file:
+    chat_data = file.read()
+
+def validate_context_and_answer(example, pred, trace=None):
+    tone_match = compare_tone_style(pred, chat_data)
+
+    return tone_match
+
+
+class GenerateAnswer(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    context = dspy.InputField(desc="may contain relevant facts")
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
+
+
+class RAG(dspy.Module):
+    def __init__(self, num_passages=3):
+        super().__init__()
+
+        self.retrieve = dspy.Retrieve(k=num_passages)
+        self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
+
+    def forward(self, question):
+        context = self.retrieve(question).passages
+        prediction = self.generate_answer(context=context, question=question)
+        return dspy.Prediction(context=context, answer=prediction.answer)
+
+teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
+compiled_rag = teleprompter.compile(RAG(), trainset=chat_data)
