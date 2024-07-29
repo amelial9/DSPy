@@ -5,8 +5,8 @@ import dspy
 import openai
 
 from dspy.teleprompt import BootstrapFewShot
+from dspy.evaluate.evaluate import Evaluate
 
-from snownlp import SnowNLP
 
 data = [
     ("高老师，这个是正宗天津菜吗", "我没听说过这玩意。天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。"),
@@ -40,8 +40,6 @@ turbo = dspy.AzureOpenAI(
 
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
 dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
-
-
 
 
 
@@ -83,9 +81,53 @@ def validate_context_and_answer(example, pred, trace=None):
     return answer_EM and answer_PM
 
 
+
+
+
+
+
+class Assess(dspy.Signature):
+    """assess the quality of an answer to a question"""
+
+    context = dspy.InputField(desc="the context for answering the question")
+    assessed_question = dspy.InputField(desc="the evaluation criterion")
+    assessed_answer = dspy.InputField(desc="the answer to the question")
+    assessment_answer = dspy.OutputField(desc="a rating between 1 and 5. only output the rating and nothing else")
+
+def llm_metric(gold, pred, trace=None):
+    predicted_answer = pred.answer
+    question = gold.question
+
+    print(f"Test Question: {question}")
+    print(f"Predicted Answer: {predicted_answer}")
+
+    faithful = "Is the assessed text grounded in the context? Say no if it includes significant facts not in the context."
+    style = "Does the tone of the predicted answer match the tone of dataset"
+
+    with dspy.context(lm = turbo):
+        context = dspy.Retrieve(k=5)(question).passages
+        faithful = dspy.ChainOfThought(Assess)(context= context, assessed_question=faithful, assessed_answer=predicted_answer)
+        style = dspy.ChainOfThought(Assess)(context = context, assessed_question=style, assessed_answer=predicted_answer)
+
+    total = float(faithful.assessment_answer) + float(style.assessment_answer)
+
+    return total / 5.0
+
+
+
+test_example = dspy.Example(question="What do cross encoders do?")
+test_pred = dspy.Example(answer="They re-rank documents.")
+
+type(llm_metric(test_example, test_pred))
+
+
+
+
+
+
+'''
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
 compiled_rag = teleprompter.compile(RAG(), trainset=trainset)
-
 
 
 my_question = "红领巾系法？"
@@ -96,3 +138,4 @@ pred = compiled_rag(my_question)
 print(f"Question: {my_question}")
 print(f"Predicted Answer: {pred.answer}")
 
+'''

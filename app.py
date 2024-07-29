@@ -6,9 +6,6 @@ import openai
 
 from dspy.teleprompt import BootstrapFewShot
 
-from snownlp import SnowNLP
-
-
 
 '''
 openai.api_key = 'sk-None-ObHsoP2TUnL23IfUTCWQT3BlbkFJ68zAZCcU4z6VlLMjKGB8'
