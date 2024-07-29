@@ -29,48 +29,6 @@ colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17
 dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
 
 
-'''
-
-
-from dotenv import dotenv_values, load_dotenv
-
-load_dotenv()
-
-config=dotenv_values(".env")
-azure_endpoint = config['AZURE_OPENAI_ENDPOINT']
-openai_api_key = config['AZURE_OPENAI_API_KEY']
-openai_api_version = config['AZURE_OPENAI_API_VERSION']
-model_name=config['MODEL_NAME']
-embedding_model=config["EMBEDDING_MODEL"]
-
-import dspy
-
-azure = dspy.AzureOpenAI(deployment_id=model_name,
-                    api_key=openai_api_key,
-                    api_base=azure_endpoint,
-                    model_type="chat",
-                    api_version=openai_api_version)
-
-colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
-dspy.settings.configure(lm=azure, rm=colbertv2_wiki17_abstracts)
-
-class BasicQA(dspy.Signature):
-    """Answer questions with short factoid answers."""
-    question = dspy.InputField()
-    answer = dspy.OutputField(desc="in JSON format: {'color': 'xxx'}")
-
-generate_answer = dspy.ChainOfThoughtWithHint(BasicQA)
-
-react_module = dspy.ReAct(BasicQA)
-
-question='What is the color of the sky?'
-hint = "It's what you often see during a sunny day."
-pred = generate_answer(question=question, hint=hint)
-
-print(f"Question: {question}")
-print(f"Predicted Answer: {pred.answer}")
-
-'''
 
 data = [
     ('What has been achieved under your administration regarding the economy?', 'We have the best economy we\'ve ever had, the most prosperity. We have got the most prosperity we\'ve ever had.'),
@@ -119,7 +77,7 @@ trainset = [dspy.Example(question=question, answer=answer).with_inputs('question
 
 train_example = trainset[0]
 
-'''
+
 class BasicQA(dspy.Signature):
     """Answer questions"""
 
@@ -163,7 +121,8 @@ pred = compiled_rag(my_question)
 
 print(f"Question: {my_question}")
 print(f"Predicted Answer: {pred.answer}")
-print(f"Retrieved Contexts (truncated): {[c[:200] + '...' for c in pred.context]}")
+
+
 '''
 
 
@@ -209,3 +168,5 @@ class RAG(dspy.Module):
 
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
 compiled_rag = teleprompter.compile(RAG(), trainset=chat_data)
+
+'''
