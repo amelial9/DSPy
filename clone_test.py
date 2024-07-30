@@ -8,7 +8,19 @@ from dspy.teleprompt import BootstrapFewShot
 from dspy.evaluate.evaluate import Evaluate
 
 
-data = [
+turbo = dspy.AzureOpenAI(
+    api_base="https://bxaisc.openai.azure.com/",
+    api_version="2023-05-15",
+    model="gpt-35-turbo",
+    api_key="9cd7d887a86a4f34932bd8f2231b1522"
+)
+
+colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
+
+
+
+testdata = [
     ("高老师，这个是正宗天津菜吗", "我没听说过这玩意。天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。"),
     ("48*2=96，怎么在100期庆典上续第三年", "不是在那节课续。是用那节课做个钩子。就是 100 节特精彩。想听就要续第三年的。"),
     ("讲完一百回 咱们也算是百课老店了", "我挺期盼的。两年半多才能有一次整百，不容易的"),
@@ -31,21 +43,14 @@ data = [
     ("我小时住军区大院，我爸都不跟我讲这些，他说每个时代有每个时代的对和错，不想影响我们的生活[发呆]他老了之后跟我讲，他不讲这些，是因为他也不知对错", "没有对错。只有成败。"),
 ]
 
-turbo = dspy.AzureOpenAI(
-    api_base="https://bxaisc.openai.azure.com/",
-    api_version="2023-05-15",
-    model="gpt-35-turbo",
-    api_key="9cd7d887a86a4f34932bd8f2231b1522"
-)
 
-colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
-dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
-
-
-
-trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in data]
+trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in testdata]
 
 train_example = trainset[0]
+
+with open('5.txt', 'r') as f:
+    conv = f.read()
+
 
 
 class BasicQA(dspy.Signature):
@@ -57,9 +62,8 @@ class BasicQA(dspy.Signature):
 class GenerateAnswer(dspy.Signature):
     """Answer questions with short factoid answers."""
 
-    context = dspy.InputField(desc="may contain relevant facts")
     question = dspy.InputField()
-    answer = dspy.OutputField(desc="often between 1 and 5 words")
+    answer = dspy.OutputField(desc="use as many words as needed")
 
 
 class RAG(dspy.Module):
@@ -75,13 +79,11 @@ class RAG(dspy.Module):
         return dspy.Prediction(context=context, answer=prediction.answer)
 
 
+'''original easy metric'''
 def validate_context_and_answer(example, pred, trace=None):
     answer_EM = dspy.evaluate.answer_exact_match(example, pred)
     answer_PM = dspy.evaluate.answer_passage_match(example, pred)
     return answer_EM and answer_PM
-
-
-
 
 
 
@@ -92,46 +94,71 @@ class Assess(dspy.Signature):
     context = dspy.InputField(desc="the context for answering the question")
     assessed_question = dspy.InputField(desc="the evaluation criterion")
     assessed_answer = dspy.InputField(desc="the answer to the question")
+    dataset = dspy.InputField(desc="the data")
     assessment_answer = dspy.OutputField(desc="a rating between 1 and 5. only output the rating and nothing else")
 
+
 def llm_metric(gold, pred, trace=None):
-    predicted_answer = pred.answer
     question = gold.question
+    predicted_answer = pred.answer
 
     print(f"Test Question: {question}")
     print(f"Predicted Answer: {predicted_answer}")
 
-    faithful = "Is the assessed text grounded in the context? Say no if it includes significant facts not in the context."
-    style = "Does the tone of the predicted answer match the tone of dataset"
+    faithful = "所评估的文本是否基于上下文？如果包含了上下文中没有的重要事实，请回答不。"
+    style = "预测结果答案的语言，风格，和语气是否与dataset中答案的相符?"
 
     with dspy.context(lm = turbo):
         context = dspy.Retrieve(k=5)(question).passages
-        faithful = dspy.ChainOfThought(Assess)(context= context, assessed_question=faithful, assessed_answer=predicted_answer)
-        style = dspy.ChainOfThought(Assess)(context = context, assessed_question=style, assessed_answer=predicted_answer)
-
-    total = float(faithful.assessment_answer) + float(style.assessment_answer)
-
-    return total / 5.0
+        print(f"Retrieved context: {context}")
+        faithful = dspy.ChainOfThought(Assess)(context=context, assessed_question=faithful, assessed_answer=predicted_answer, dataset="N/A")
+        style = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=style, assessed_answer=predicted_answer, dataset=str(trainset))
 
 
+    print(f"Faithful: {faithful.assessment_answer}")
+    print(f"Style: {style.assessment_answer}")
 
-test_example = dspy.Example(question="What do cross encoders do?")
-test_pred = dspy.Example(answer="They re-rank documents.")
+    if (faithful.assessment_answer == "N/A" or style.assessment_answer == "N/A"):
+        return 0
 
-type(llm_metric(test_example, test_pred))
+    total = float(faithful.assessment_answer) + float(style.assessment_answer) * 4
 
-
+    return round(total / 5, 1)
 
 
 
 
 '''
+test_example = dspy.Example(question="这个是正宗天津菜吗?")
+test_pred = dspy.Example(answer="天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。")
+
+print(f"Total: {llm_metric(test_example, test_pred)}")
+'''
+
+
+#evaluate = Evaluate(devset=trainset, num_threads=1, display_progress=True, display_table=5)
+#evaluate(RAG(), metric=llm_metric)
+
+
+uncompiled_rag = RAG()
+
+teleprompter = BootstrapFewShot(metric=llm_metric, max_labeled_demos=8, max_rounds=3)
+compiled_rag = teleprompter.compile(uncompiled_rag, trainset = trainset)
+
+print(compiled_rag("操控舆论和诽谤的本质区别是什么?"))
+
+
+
+'''
+
+dspy.Predict(GenerateAnswer)(question="What are Cross Encoders?")
+
+
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
 compiled_rag = teleprompter.compile(RAG(), trainset=trainset)
 
 
 my_question = "红领巾系法？"
-
 pred = compiled_rag(my_question)
 
 
