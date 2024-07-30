@@ -48,7 +48,7 @@ trainset = [dspy.Example(question=question, answer=answer).with_inputs('question
 
 train_example = trainset[0]
 
-with open('5.txt', 'r') as f:
+with open('51.txt', 'r') as f:
     conv = f.read()
 
 
@@ -75,7 +75,7 @@ class RAG(dspy.Module):
 
     def forward(self, question):
         context = self.retrieve(question).passages
-        prediction = self.generate_answer(context=context, question=question)
+        prediction = self.generate_answer(context=context, question=("请用中文回答：" + question))
         return dspy.Prediction(context=context, answer=prediction.answer)
 
 
@@ -95,7 +95,7 @@ class Assess(dspy.Signature):
     assessed_question = dspy.InputField(desc="the evaluation criterion")
     assessed_answer = dspy.InputField(desc="the answer to the question")
     dataset = dspy.InputField(desc="the data")
-    assessment_answer = dspy.OutputField(desc="a rating between 1 and 5. only output the rating and nothing else")
+    assessment_answer = dspy.OutputField(desc="a rating between 1 and 10. only output the rating and nothing else")
 
 
 def llm_metric(gold, pred, trace=None):
@@ -105,25 +105,31 @@ def llm_metric(gold, pred, trace=None):
     print(f"Test Question: {question}")
     print(f"Predicted Answer: {predicted_answer}")
 
-    faithful = "所评估的文本是否基于上下文？如果包含了上下文中没有的重要事实，请回答不。"
-    style = "预测结果答案的语言，风格，和语气是否与dataset中答案的相符?"
+    '''
+    faithful = "Is the evaluated text grounded in the context? If it includes important facts not in the context, give a low score."
+    style = "Does the tone and style of the predicted result match the tone and style of the text in the dataset? If not, give a low score."
+    structure = "Does the sentence structure of the predicted result match the sentence structure of the text in the dataset? If not, give a low score."
+    '''
+    style = "Does the answer sounds like it's given by the person from the dataset? If not, give a low score."
 
     with dspy.context(lm = turbo):
         context = dspy.Retrieve(k=5)(question).passages
         print(f"Retrieved context: {context}")
-        faithful = dspy.ChainOfThought(Assess)(context=context, assessed_question=faithful, assessed_answer=predicted_answer, dataset="N/A")
-        style = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=style, assessed_answer=predicted_answer, dataset=str(trainset))
+        #faithful = dspy.ChainOfThought(Assess)(context=context, assessed_question=faithful, assessed_answer=predicted_answer, dataset="N/A")
+        style = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=style, assessed_answer=predicted_answer, dataset=str(conv))
+        #structure = dspy.ChainOfThought(Assess)(context="N/A", assessed_question=structure, assessed_answer=predicted_answer,dataset=str(conv))
 
 
-    print(f"Faithful: {faithful.assessment_answer}")
+    #print(f"Faithful: {faithful.assessment_answer}")
     print(f"Style: {style.assessment_answer}")
+    #print(f"Structure: {structure.assessment_answer}")
 
-    if (faithful.assessment_answer == "N/A" or style.assessment_answer == "N/A"):
+    if style.assessment_answer == "N/A":
         return 0
 
-    total = float(faithful.assessment_answer) + float(style.assessment_answer) * 4
+    total = float(style.assessment_answer) * 10
 
-    return round(total / 5, 1)
+    return round(total / 10, 1)
 
 
 
@@ -142,16 +148,22 @@ print(f"Total: {llm_metric(test_example, test_pred)}")
 
 uncompiled_rag = RAG()
 
-teleprompter = BootstrapFewShot(metric=llm_metric, max_labeled_demos=8, max_rounds=3)
-compiled_rag = teleprompter.compile(uncompiled_rag, trainset = trainset)
+teleprompter = BootstrapFewShot(metric=llm_metric)
+compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
 
-print(compiled_rag("操控舆论和诽谤的本质区别是什么?"))
+
+user_input = ""
+
+while user_input != "quit":
+    user_input = input("Enter a question: ")
+    if user_input != "quit":
+        print(compiled_rag(user_input).answer)
 
 
 
 '''
 
-dspy.Predict(GenerateAnswer)(question="What are Cross Encoders?")
+dspy.Predict(GenerateAnswer)(question="胡塞拖鞋军针对老美这么久了为毛一点动作都没有啊美军")
 
 
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
