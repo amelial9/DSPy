@@ -48,7 +48,7 @@ trainset = [dspy.Example(question=question, answer=answer).with_inputs('question
 
 train_example = trainset[0]
 
-with open('51.txt', 'r') as f:
+with open('chat_files/filtered_cut.txt', 'r') as f:
     conv = f.read()
 
 
