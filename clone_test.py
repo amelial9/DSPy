@@ -63,7 +63,7 @@ class GenerateAnswer(dspy.Signature):
     """Answer questions with short factoid answers."""
 
     question = dspy.InputField()
-    answer = dspy.OutputField(desc="use as many words as needed")
+    answer = dspy.OutputField()
 
 
 class RAG(dspy.Module):
@@ -71,7 +71,7 @@ class RAG(dspy.Module):
         super().__init__()
 
         self.retrieve = dspy.Retrieve(k=num_passages)
-        self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
+        self.generate_answer = dspy.Predict(GenerateAnswer)
 
     def forward(self, question):
         context = self.retrieve(question).passages
@@ -79,12 +79,11 @@ class RAG(dspy.Module):
         return dspy.Prediction(context=context, answer=prediction.answer)
 
 
-'''original easy metric'''
+'''original basic metric'''
 def validate_context_and_answer(example, pred, trace=None):
     answer_EM = dspy.evaluate.answer_exact_match(example, pred)
     answer_PM = dspy.evaluate.answer_passage_match(example, pred)
     return answer_EM and answer_PM
-
 
 
 
@@ -95,7 +94,7 @@ class Assess(dspy.Signature):
     assessed_question = dspy.InputField(desc="the evaluation criterion")
     assessed_answer = dspy.InputField(desc="the answer to the question")
     dataset = dspy.InputField(desc="the data")
-    assessment_answer = dspy.OutputField(desc="a rating between 1 and 10. only output the rating and nothing else")
+    assessment_answer = dspy.OutputField(desc="Give a rating between 1 and 10. only output the rating and nothing else")
 
 
 def llm_metric(gold, pred, trace=None):
@@ -105,32 +104,35 @@ def llm_metric(gold, pred, trace=None):
     print(f"Test Question: {question}")
     print(f"Predicted Answer: {predicted_answer}")
 
-    '''
-    faithful = "Is the evaluated text grounded in the context? If it includes important facts not in the context, give a low score."
+
+    #faithful = "Is the evaluated text grounded in the context? If it includes important facts not in the context, give a low score."
+    #specificity = "Does the answer include specific details or nuances typical of the dataset? If not, give a low score"
+    #vocab = "Does the vocabulary used in the predicted answer match the vocabulary in the dataset? If not, give a low score."
     style = "Does the tone and style of the predicted result match the tone and style of the text in the dataset? If not, give a low score."
     structure = "Does the sentence structure of the predicted result match the sentence structure of the text in the dataset? If not, give a low score."
-    '''
-    style = "Does the answer sounds like it's given by the person from the dataset? If not, give a low score."
+    formality = "Is the level of formality in the predicted answer consistent with the style in dataset? If not, give a low score."
+
 
     with dspy.context(lm = turbo):
-        context = dspy.Retrieve(k=5)(question).passages
-        print(f"Retrieved context: {context}")
+        #context = dspy.Retrieve(k=5)(question).passages
+        #print(f"Retrieved context: {context}")
         #faithful = dspy.ChainOfThought(Assess)(context=context, assessed_question=faithful, assessed_answer=predicted_answer, dataset="N/A")
+        #vocab = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=vocab, assessed_answer=predicted_answer, dataset=str(conv))
         style = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=style, assessed_answer=predicted_answer, dataset=str(conv))
-        #structure = dspy.ChainOfThought(Assess)(context="N/A", assessed_question=structure, assessed_answer=predicted_answer,dataset=str(conv))
+        structure = dspy.ChainOfThought(Assess)(context="N/A", assessed_question=structure, assessed_answer=predicted_answer,dataset=str(conv))
+        formality = dspy.ChainOfThought(Assess)(context="N/A", assessed_question=formality, assessed_answer=predicted_answer, dataset=str(conv))
 
 
     #print(f"Faithful: {faithful.assessment_answer}")
+    #print(f"Vocab: {vocab.assessment_answer}")
     print(f"Style: {style.assessment_answer}")
-    #print(f"Structure: {structure.assessment_answer}")
+    print(f"Structure: {structure.assessment_answer}")
+    print(f"Formality: {formality.assessment_answer}")
 
-    if style.assessment_answer == "N/A":
-        return 0
+    total = round((float(style.assessment_answer) + float(formality.assessment_answer) + float(structure.assessment_answer))/3, 1)
+    print(f"Total: {total}")
 
-    total = float(style.assessment_answer) * 10
-
-    return round(total / 10, 1)
-
+    return total
 
 
 
@@ -139,11 +141,11 @@ test_example = dspy.Example(question="这个是正宗天津菜吗?")
 test_pred = dspy.Example(answer="天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。")
 
 print(f"Total: {llm_metric(test_example, test_pred)}")
+
+evaluate = Evaluate(devset=trainset, num_threads=1, display_progress=True, display_table=5)
+evaluate(RAG(), metric=llm_metric)
+
 '''
-
-
-#evaluate = Evaluate(devset=trainset, num_threads=1, display_progress=True, display_table=5)
-#evaluate(RAG(), metric=llm_metric)
 
 
 uncompiled_rag = RAG()
@@ -153,6 +155,7 @@ compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
 
 
 user_input = ""
+
 
 while user_input != "quit":
     user_input = input("Enter a question: ")
