@@ -78,11 +78,6 @@ class clone(dspy.Signature):
     answer = dspy.OutputField()
 
 
-class ImpersonateGenerate(dspy.Signature):
-    """Answer questions in 高老师's style."""
-
-    question = dspy.InputField(desc = "Question for 高老师")
-    answer = dspy.OutputField(desc = "Answer question in way that sounds like 高老师")
 
 
 class Assess(dspy.Signature):
@@ -182,7 +177,17 @@ while user_input != "quit":
 
 
 
+
+
 '''
+
+
+class ImpersonateGenerate(dspy.Signature):
+    """Answer questions in 高老师's style."""
+
+    question = dspy.InputField(desc = "Question for 高老师")
+    answer = dspy.OutputField(desc = "Answer question in way that sounds like 高老师")
+
 
 test_example = dspy.Example(question="这个是正宗天津菜吗?")
 test_pred = dspy.Example(answer="天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。")
