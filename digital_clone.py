@@ -1,9 +1,14 @@
 import sys
 import os
+from typing import List
+
 import dspy
 
 from dspy.teleprompt import BootstrapFewShot, BootstrapFewShotWithRandomSearch
 from dspy.evaluate.evaluate import Evaluate
+from dspy.retrieve.milvus_rm import MilvusRM
+
+import requests
 
 
 turbo = dspy.AzureOpenAI(
@@ -13,9 +18,21 @@ turbo = dspy.AzureOpenAI(
     api_key="9cd7d887a86a4f34932bd8f2231b1522"
 )
 
+def embedding_function(texts: List[str]) -> List[float]:
+    rsp = requests.post(url="http://124.220.49.224:9001/v1/embeddings", json={"input": texts, "model": "sensenova/piccolo-large-zh"}).json()
+    embedding = [rsp.get("data")[0].get("embedding", [])]
+    return embedding
 
-colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
-dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
+doc_rm = MilvusRM(
+    collection_name='sensenova__piccolo_large_zh_file_index',
+    uri="https://in01-f831c960b661326.tc-ap-shanghai.vectordb.zilliz.com.cn",
+    token="f0e03f078848974dd1ecc67c788b81d7c670ca2cdfe68ab9c21580a65b6e077d570829e1204a50b02c3d9e8dcffc8718b01919bc",
+    embedding_function=embedding_function
+)
+
+#colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
+
+dspy.settings.configure(lm=turbo, rm=doc_rm)
 
 
 testdata = [
@@ -149,7 +166,6 @@ def llm_metric(gold, pred, trace=None):
 
 
 uncompiled_rag = RAG()
-
 teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=20)
 compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
 
