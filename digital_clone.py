@@ -2,9 +2,7 @@ import sys
 import os
 import dspy
 
-import openai
-
-from dspy.teleprompt import BootstrapFewShot
+from dspy.teleprompt import BootstrapFewShot, BootstrapFewShotWithRandomSearch
 from dspy.evaluate.evaluate import Evaluate
 
 
@@ -15,9 +13,9 @@ turbo = dspy.AzureOpenAI(
     api_key="9cd7d887a86a4f34932bd8f2231b1522"
 )
 
+
 colbertv2_wiki17_abstracts = dspy.ColBERTv2(url='http://20.102.90.50:2017/wiki17_abstracts')
 dspy.settings.configure(lm=turbo, rm=colbertv2_wiki17_abstracts)
-
 
 
 testdata = [
@@ -53,17 +51,44 @@ with open('chat_files/filtered_cut.txt', 'r') as f:
 
 
 
-class BasicQA(dspy.Signature):
-    """Answer questions"""
 
+
+
+class clone(dspy.Signature):
+    """ Answer questions"""
+    context = dspy.InputField()
     question = dspy.InputField()
     answer = dspy.OutputField()
 
-class GenerateAnswer(dspy.Signature):
-    """Answer questions with short factoid answers."""
 
-    question = dspy.InputField()
-    answer = dspy.OutputField()
+class ImpersonateGenerate(dspy.Signature):
+    """Answer questions in 高老师's style."""
+
+    question = dspy.InputField(desc = "Question for 高老师")
+    answer = dspy.OutputField(desc = "Answer question in way that sounds like 高老师")
+
+
+class Assess(dspy.Signature):
+    """assess the quality of an answer to a question"""
+
+    evaluation_question = dspy.InputField(desc="the evaluation criterion")
+    answer = dspy.InputField(desc="the actual answer in dataset")
+    predicted = dspy.InputField(desc="the predicted answer")
+
+    assessment_answer = dspy.OutputField(desc="Give a score between 1 and 20 for the predicted answer on the evaluatoin criterion question. Only give number, nothing else. If unable to rate, give 1. ")
+
+
+class ImpersonateModule(dspy.Module):
+    def _init_(self, num_passages=3):
+        super()._init_()
+        self.retrieve = dspy.Retrieve(k=num_passages)
+        self.generate_answer = dspy.ChainOfThought("context, question -> answer")
+
+    def forward(self, question):
+        context = self.retrieve(question).passages
+        answer = self.generate_answer(context=context, question=question)
+        return answer
+
 
 
 class RAG(dspy.Module):
@@ -71,7 +96,7 @@ class RAG(dspy.Module):
         super().__init__()
 
         self.retrieve = dspy.Retrieve(k=num_passages)
-        self.generate_answer = dspy.Predict(GenerateAnswer)
+        self.generate_answer = dspy.ChainOfThought("context, question -> answer")
 
     def forward(self, question):
         context = self.retrieve(question).passages
@@ -79,7 +104,8 @@ class RAG(dspy.Module):
         return dspy.Prediction(context=context, answer=prediction.answer)
 
 
-'''original basic metric'''
+
+'''basic metric template (unused)'''
 def validate_context_and_answer(example, pred, trace=None):
     answer_EM = dspy.evaluate.answer_exact_match(example, pred)
     answer_PM = dspy.evaluate.answer_passage_match(example, pred)
@@ -87,56 +113,61 @@ def validate_context_and_answer(example, pred, trace=None):
 
 
 
-class Assess(dspy.Signature):
-    """assess the quality of an answer to a question"""
-
-    context = dspy.InputField(desc="the context for answering the question")
-    assessed_question = dspy.InputField(desc="the evaluation criterion")
-    assessed_answer = dspy.InputField(desc="the answer to the question")
-    dataset = dspy.InputField(desc="the data")
-    assessment_answer = dspy.OutputField(desc="Give a rating between 1 and 10. only output the rating and nothing else")
-
-
 def llm_metric(gold, pred, trace=None):
     question = gold.question
-    predicted_answer = pred.answer
+    answer = gold.answer
+    predicted = pred.answer
 
     print(f"Test Question: {question}")
-    print(f"Predicted Answer: {predicted_answer}")
+    print(f"Actual dataset Answer: {answer}")
+    print(f"Predicted Answer: {predicted}")
 
 
-    #faithful = "Is the evaluated text grounded in the context? If it includes important facts not in the context, give a low score."
-    #specificity = "Does the answer include specific details or nuances typical of the dataset? If not, give a low score"
-    #vocab = "Does the vocabulary used in the predicted answer match the vocabulary in the dataset? If not, give a low score."
-    style = "Does the tone and style of the predicted result match the tone and style of the text in the dataset? If not, give a low score."
-    structure = "Does the sentence structure of the predicted result match the sentence structure of the text in the dataset? If not, give a low score."
-    formality = "Is the level of formality in the predicted answer consistent with the style in dataset? If not, give a low score."
+    style = "Does the tone and style of the predicted result match the tone and style of the actual answer?"
+    structure = "Does the sentence structure of the predicted result match the sentence structure of the actual answer?"
+    length = "Is the length of predicted answer consistent with the length of actual answer?"
 
 
     with dspy.context(lm = turbo):
         #context = dspy.Retrieve(k=5)(question).passages
         #print(f"Retrieved context: {context}")
-        #faithful = dspy.ChainOfThought(Assess)(context=context, assessed_question=faithful, assessed_answer=predicted_answer, dataset="N/A")
-        #vocab = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=vocab, assessed_answer=predicted_answer, dataset=str(conv))
-        style = dspy.ChainOfThought(Assess)(context = "N/A", assessed_question=style, assessed_answer=predicted_answer, dataset=str(conv))
-        structure = dspy.ChainOfThought(Assess)(context="N/A", assessed_question=structure, assessed_answer=predicted_answer,dataset=str(conv))
-        formality = dspy.ChainOfThought(Assess)(context="N/A", assessed_question=formality, assessed_answer=predicted_answer, dataset=str(conv))
+        style = dspy.ChainOfThought(Assess)(evaluation_question=style, answer=answer, predicted=predicted)
+        structure = dspy.ChainOfThought(Assess)(evaluation_question=structure, answer=answer, predicted=predicted)
+        length = dspy.ChainOfThought(Assess)(evaluation_question=length, answer=answer, predicted=predicted)
 
 
     #print(f"Faithful: {faithful.assessment_answer}")
-    #print(f"Vocab: {vocab.assessment_answer}")
     print(f"Style: {style.assessment_answer}")
     print(f"Structure: {structure.assessment_answer}")
-    print(f"Formality: {formality.assessment_answer}")
+    print(f"Length: {length.assessment_answer}")
 
-    total = round((float(style.assessment_answer) + float(formality.assessment_answer) + float(structure.assessment_answer))/3, 1)
+    total = round((float(style.assessment_answer) + float(length.assessment_answer) + float(structure.assessment_answer))/3, 1)
     print(f"Total: {total}")
 
     return total
 
 
 
+uncompiled_rag = RAG()
+
+teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=20)
+compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
+
+
+
+user_input = ""
+
+while user_input != "quit":
+    user_input = input("Enter a question (\"quit\" to quit):")
+    if user_input != "quit":
+        ans = compiled_rag(user_input).answer
+        print(ans)
+
+
+
+
 '''
+
 test_example = dspy.Example(question="这个是正宗天津菜吗?")
 test_pred = dspy.Example(answer="天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。")
 
@@ -145,29 +176,8 @@ print(f"Total: {llm_metric(test_example, test_pred)}")
 evaluate = Evaluate(devset=trainset, num_threads=1, display_progress=True, display_table=5)
 evaluate(RAG(), metric=llm_metric)
 
-'''
-
-
-uncompiled_rag = RAG()
-
-teleprompter = BootstrapFewShot(metric=llm_metric)
-compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
-
-
-user_input = ""
-
-
-while user_input != "quit":
-    user_input = input("Enter a question: ")
-    if user_input != "quit":
-        print(compiled_rag(user_input).answer)
-
-
-
-'''
 
 dspy.Predict(GenerateAnswer)(question="胡塞拖鞋军针对老美这么久了为毛一点动作都没有啊美军")
-
 
 teleprompter = BootstrapFewShot(metric=validate_context_and_answer)
 compiled_rag = teleprompter.compile(RAG(), trainset=trainset)
