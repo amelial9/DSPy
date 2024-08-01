@@ -75,7 +75,7 @@ class Assess(dspy.Signature):
     answer = dspy.InputField(desc="the actual answer in dataset")
     predicted = dspy.InputField(desc="the predicted answer")
 
-    assessment_answer = dspy.OutputField(desc="Give a score between 1 and 20 for the predicted answer on the evaluatoin criterion question. Only give number, nothing else. If unable to rate, give 1. ")
+    assessment_answer = dspy.OutputField(desc="Give a score between 1 and 20 for the predicted answer on the evaluatoin criterion question. Only give number, nothing else. If unable to rate, give 1.")
 
 
 class ImpersonateModule(dspy.Module):
@@ -154,7 +154,7 @@ teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=20)
 compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
 
 
-
+'''
 user_input = ""
 
 while user_input != "quit":
@@ -162,7 +162,7 @@ while user_input != "quit":
     if user_input != "quit":
         ans = compiled_rag(user_input).answer
         print(ans)
-
+'''
 
 
 
