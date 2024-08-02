@@ -1,4 +1,4 @@
-This is practice with DSPy to optimize LLMs.
+This program uses DSPy to optimize LLMs.
 
 Python version: 3.12
 
