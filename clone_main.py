@@ -1,16 +1,17 @@
-import sys
-import os
+
 from typing import List
 
 import dspy
 
-from dspy.teleprompt import BootstrapFewShot, BootstrapFewShotWithRandomSearch
+from dspy.teleprompt import BootstrapFewShot
 from dspy.evaluate.evaluate import Evaluate
 from dspy.retrieve.milvus_rm import MilvusRM
 
 import requests
 
 import pandas as pd
+
+import json
 
 
 turbo = dspy.AzureOpenAI(
@@ -66,16 +67,9 @@ df = pd.read_csv("QAdatasets/dataset.csv", header = None)
 testdata = list(df.itertuples(index=False, name=None))
 
 
-
 trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in testdata]
 
 train_example = trainset[0]
-
-with open('chat_files/filtered_cut.txt', 'r') as f:
-    conv = f.read()
-
-
-
 
 
 
@@ -87,7 +81,6 @@ class clone(dspy.Signature):
 
 
 
-
 class Assess(dspy.Signature):
     """assess the quality of an answer to a question"""
 
@@ -96,18 +89,6 @@ class Assess(dspy.Signature):
     predicted = dspy.InputField(desc="the predicted answer")
 
     assessment_answer = dspy.OutputField(desc="Give a score between 1 and 20 for the predicted answer on the evaluatoin criterion question. Only give number, nothing else. If unable to rate, give 1.")
-
-
-class ImpersonateModule(dspy.Module):
-    def _init_(self, num_passages=3):
-        super()._init_()
-        self.retrieve = dspy.Retrieve(k=num_passages)
-        self.generate_answer = dspy.ChainOfThought("context, question -> answer")
-
-    def forward(self, question):
-        context = self.retrieve(question).passages
-        answer = self.generate_answer(context=context, question=question)
-        return answer
 
 
 
@@ -122,6 +103,20 @@ class RAG(dspy.Module):
         context = self.retrieve(question).passages
         prediction = self.generate_answer(context=context, question=("请用中文回答：" + question))
         return dspy.Prediction(context=context, answer=prediction.answer)
+
+    def to_dict(self):
+        # Convert the model components to a dictionary
+        return {
+            "num_passages": self.retrieve.k,
+            "chain_of_thought": str(self.generate_answer)
+        }
+
+    @classmethod
+    def from_dict(cls, model_dict):
+        # Create a new instance of the model from a dictionary
+        model = cls(num_passages=model_dict["num_passages"])
+        # Note: Additional steps may be required to fully restore the ChainOfThought instance
+        return model
 
 
 
@@ -167,29 +162,54 @@ def llm_metric(gold, pred, trace=None):
     return total
 
 
+def load_rag(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        state = json.load(f)
+
+    if state["class_name"] == "RAG":
+        instance = RAG(num_passages=state["num_passages"])
+        instance.retrieve.k = state["retrieve"]["k"]
+        instance.generate_answer.traces = state["generate_answer"]["traces"]
+        instance.generate_answer.train = state["generate_answer"]["train"]
+        instance.generate_answer.demos = state["generate_answer"]["demos"]
+        return instance
+    else:
+        raise ValueError("Unsupported class type")
+
+
 
 uncompiled_rag = RAG()
-teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=20)
+teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=90)
 compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
+
+model_dict = compiled_rag.to_dict()
+
+with open('compiled_rag.json', 'w') as json_file:
+    json.dump(model_dict, json_file)
 
 
 '''
+with open('compiled_rag.json', 'r') as json_file:
+    model_dict = json.load(json_file)
+
+
+saved_rag = RAG.from_dict(model_dict)
+
+
+
 user_input = ""
 
 while user_input != "quit":
     user_input = input("Enter a question (\"quit\" to quit):")
     if user_input != "quit":
-        ans = compiled_rag(user_input).answer
+        ans = saved_rag.forward(user_input).answer
         print(ans)
 '''
 
 
 
-
-
+'''old code snippets'''
 '''
-
-
 class ImpersonateGenerate(dspy.Signature):
     """Answer questions in 高老师's style."""
 
