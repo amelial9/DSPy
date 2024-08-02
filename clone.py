@@ -13,7 +13,7 @@ import pandas as pd
 
 import json
 
-'''
+
 turbo = dspy.AzureOpenAI(
     api_base="https://bxaisc.openai.azure.com/",
     api_version="2023-05-15",
@@ -27,6 +27,7 @@ turbo = dspy.AzureOpenAI(
     model="gpt-4o",
     api_key="9cd7d887a86a4f34932bd8f2231b1522"
 )
+'''
 
 def embedding_function(texts: List[str]) -> List[float]:
     rsp = requests.post(url="http://124.220.49.224:9001/v1/embeddings", json={"input": texts, "model": "sensenova/piccolo-large-zh"}).json()

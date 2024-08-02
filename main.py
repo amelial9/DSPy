@@ -41,7 +41,7 @@ testdata = list(df.itertuples(index=False, name=None))
 trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in testdata]
 
 uncompiled_rag = RAG()
-teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=20)
+teleprompter = BootstrapFewShot(metric=llm_metric, max_bootstrapped_demos=50)
 compiled_rag = teleprompter.compile(uncompiled_rag, trainset=trainset)
 
 # model_dict = compiled_rag.to_dict()
