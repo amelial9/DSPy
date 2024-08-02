@@ -34,6 +34,7 @@ testdata = [
 
 '''remove comment to retrain RAG'''
 
+
 df = pd.read_excel("QAdatasets/gen_qa.xlsx", header = None)
 testdata = list(df.itertuples(index=False, name=None))
 

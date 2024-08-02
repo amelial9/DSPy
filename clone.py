@@ -13,11 +13,18 @@ import pandas as pd
 
 import json
 
-
+'''
 turbo = dspy.AzureOpenAI(
     api_base="https://bxaisc.openai.azure.com/",
     api_version="2023-05-15",
     model="gpt-35-turbo",
+    api_key="9cd7d887a86a4f34932bd8f2231b1522"
+)
+'''
+turbo = dspy.AzureOpenAI(
+    api_base="https://bxaisc.openai.azure.com/",
+    api_version="2023-05-15",
+    model="gpt-4o",
     api_key="9cd7d887a86a4f34932bd8f2231b1522"
 )
 
