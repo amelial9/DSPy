@@ -10,6 +10,8 @@ from dspy.retrieve.milvus_rm import MilvusRM
 
 import requests
 
+import pandas as pd
+
 
 turbo = dspy.AzureOpenAI(
     api_base="https://bxaisc.openai.azure.com/",
@@ -34,7 +36,7 @@ doc_rm = MilvusRM(
 
 dspy.settings.configure(lm=turbo, rm=doc_rm)
 
-
+'''
 testdata = [
     ("高老师，这个是正宗天津菜吗", "我没听说过这玩意。天津菜比较有代表性的是八珍豆腐、老爆三、新爆三、全爆、八大碗。这个确实没听过。"),
     ("48*2=96，怎么在100期庆典上续第三年", "不是在那节课续。是用那节课做个钩子。就是 100 节特精彩。想听就要续第三年的。"),
@@ -57,6 +59,12 @@ testdata = [
     ("官方是 不想有人控制舆论 而不是不允许暴露真相？", "地方政府不想事情闹大。这个事情已经出现跨省了。而且可能牵扯到了一些人。所以。Tz是妈咪，细想"),
     ("我小时住军区大院，我爸都不跟我讲这些，他说每个时代有每个时代的对和错，不想影响我们的生活[发呆]他老了之后跟我讲，他不讲这些，是因为他也不知对错", "没有对错。只有成败。"),
 ]
+'''
+
+
+df = pd.read_csv("QAdatasets/dataset.csv", header = None)
+testdata = list(df.itertuples(index=False, name=None))
+
 
 
 trainset = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in testdata]
