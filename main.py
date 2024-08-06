@@ -4,7 +4,8 @@ import traceback
 import pandas
 from typing import List
 from dspy.retrieve.milvus_rm import MilvusRM
-from dspy.teleprompt import BootstrapFewShotWithRandomSearch
+from dspy.teleprompt import BootstrapFewShot, BootstrapFewShotWithRandomSearch
+from dsp.utils import deduplicate
 
 
 def embedding_function(texts: List[str]) -> List[float]:
@@ -36,6 +37,19 @@ doc_rm = MilvusRM(
 )
 dspy.settings.configure(lm=lm, rm=doc_rm)
 
+class GenerateAnswer(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    context = dspy.InputField(desc="may contain relevant facts")
+    question = dspy.InputField()
+    answer = dspy.OutputField()
+
+class GenerateSearchQuery(dspy.Signature):
+    """Write a simple search query that will help answer a complex question."""
+
+    context = dspy.InputField(desc="may contain relevant facts")
+    question = dspy.InputField()
+    query = dspy.OutputField()
 
 class Assess(dspy.Signature):
     """assess the quality of an answer to a question"""
@@ -59,6 +73,7 @@ class RAG(dspy.Module):
         prediction = self.generate_answer(context=context, question=("请用中文回答：" + question))
         return dspy.Prediction(context=context, answer=prediction.answer)
 
+    '''
     def llm_metric(self, gold, pred, trace=None):
         question = gold.question
         answer = gold.answer
@@ -68,28 +83,72 @@ class RAG(dspy.Module):
         print(f"Actual dataset Answer: {answer}")
         print(f"Predicted Answer: {predicted}")
 
-        style = "Does the tone and style of the predicted result match the tone and style of the actual answer?"
-        structure = "Does the sentence structure of the predicted result match the sentence structure of the actual answer?"
-        # length = "Is the length of predicted answer consistent with the length of actual answer?"
+        faithful = "Is the predicted answer factual?"
 
         with dspy.context(lm=lm):
-            # context = dspy.Retrieve(k=5)(question).passages
-            # print(f"Retrieved context: {context}")
-            style = dspy.ChainOfThought(Assess)(evaluation_question=style, answer=answer, predicted=predicted)
-            structure = dspy.ChainOfThought(Assess)(evaluation_question=structure, answer=answer, predicted=predicted)
-            # length = dspy.ChainOfThought(Assess)(evaluation_question=length, answer=answer, predicted=predicted)
+            faithful = dspy.ChainOfThought(Assess)(evaluation_question=faithful, answer=answer, predicted=predicted)
 
-        print(f"Style: {style.assessment_answer}")
-        print(f"Structure: {structure.assessment_answer}")
-        # print(f"Length: {length.assessment_answer}")
+        print(f"Faithful: {faithful.assessment_answer}")
 
-        # sum_score = float(style.assessment_answer) + float(length.assessment_answer) + float(structure.assessment_answer)
-        sum_score = float(style.assessment_answer) + float(structure.assessment_answer)
-        # total_score = round(sum_score / 3, 1)
-        total_score = round(sum_score / 2, 1)
-        print(f"Total: {total_score}")
-        lm.inspect_history(n=1)
-        return total_score
+        return float(faithful.assessment_answer)
+        '''
+
+def llm_metric(gold, pred, trace=None):
+    question = gold.question
+    answer = gold.answer
+    predicted = pred.answer
+
+    print(f"Test Question: {question}")
+    print(f"Actual dataset Answer: {answer}")
+    print(f"Predicted Answer: {predicted}")
+
+
+    style = "Does the tone and style of the predicted result match the tone and style of the actual answer?"
+    structure = "Does the sentence structure of the predicted result match the sentence structure of the actual answer?"
+    faithful = "Is the predicted answer factual?"
+    # length = "Is the length of predicted answer consistent with the length of actual answer?"
+
+    with dspy.context(lm=lm):
+        # context = dspy.Retrieve(k=5)(question).passages
+        # print(f"Retrieved context: {context}")
+        style = dspy.ChainOfThought(Assess)(evaluation_question=style, answer=answer, predicted=predicted)
+        structure = dspy.ChainOfThought(Assess)(evaluation_question=structure, answer=answer, predicted=predicted)
+        faithful = dspy.ChainOfThought(Assess)(evaluation_question=faithful, answer=answer, predicted=predicted)
+        # length = dspy.ChainOfThought(Assess)(evaluation_question=length, answer=answer, predicted=predicted)
+
+    print(f"Style: {style.assessment_answer}")
+    print(f"Structure: {structure.assessment_answer}")
+    print(f"Faithful: {faithful.assessment_answer}")
+    # print(f"Length: {length.assessment_answer}")
+
+    # sum_score = float(style.assessment_answer) + float(length.assessment_answer) + float(structure.assessment_answer)
+    sum_score = float(style.assessment_answer) + float(structure.assessment_answer) + float(faithful.assessment_answer)
+    total_score = round(sum_score / 3, 1)
+    #total_score = round(sum_score / 2, 1)
+    print(f"Total: {total_score}")
+    #lm.inspect_history(n=1)
+    return total_score
+
+
+class SimplifiedBaleen(dspy.Module):
+    def __init__(self, passages_per_hop=3, max_hops=1):
+        super().__init__()
+
+        self.generate_query = [dspy.ChainOfThought(GenerateSearchQuery) for _ in range(max_hops)]
+        self.retrieve = dspy.Retrieve(k=passages_per_hop)
+        self.generate_answer = dspy.ChainOfThought(GenerateAnswer)
+        self.max_hops = max_hops
+
+    def forward(self, question):
+        context = []
+
+        for hop in range(self.max_hops):
+            query = self.generate_query[hop](context=context, question=question).query
+            passages = self.retrieve(query).passages
+            context = deduplicate(context + passages)
+
+        pred = self.generate_answer(context=context, question="用中文回答："+question)
+        return dspy.Prediction(context=context, answer=pred.answer)
 
 
 class CloneModel:
@@ -100,6 +159,7 @@ class CloneModel:
     @staticmethod
     def load_train_data():
         df = pandas.read_excel("QAdatasets/gen_qa.xlsx", header=None)
+        #df = pandas.read_excel("QAdatasets/高老师QA0730_coze.xlsx", header=None)
         train_set = [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in list(df.itertuples(index=False, name=None))]
         return train_set
 
@@ -129,19 +189,41 @@ class CloneModel:
         ]
         return [dspy.Example(question=question, answer=answer).with_inputs('question') for question, answer in testdata]
 
+
+
     def load_model(self, is_training=True):
-        rag = RAG()
-        teleprompter = BootstrapFewShotWithRandomSearch(metric=rag.llm_metric)
+
+
+        baleen = SimplifiedBaleen()
+        teleprompter = BootstrapFewShotWithRandomSearch(metric = llm_metric)
 
         if is_training:
             train_set = self.load_train_data()
             test_set = self.load_test_data()
-            compiled_rag = teleprompter.compile(rag, trainset=train_set, valset=test_set)
+
+            compiled_baleen = teleprompter.compile(baleen, trainset = train_set, valset=test_set)
+            compiled_baleen.save("gao_clone.json")
+        else:
+            compiled_baleen = SimplifiedBaleen()
+            compiled_baleen.load("gao_clone.json")
+
+        return compiled_baleen
+
+        '''
+
+        rag = RAG()
+        teleprompter = BootstrapFewShot(metric = llm_metric)
+        
+        if is_training:
+            train_set = self.load_train_data()
+            test_set = self.load_test_data()
+            compiled_rag = teleprompter.compile(rag, trainset = test_set)
             compiled_rag.save("gao_clone.json")
         else:
             compiled_rag = RAG()
             compiled_rag.load("gao_clone.json")
         return compiled_rag
+        '''
 
     def run(self):
         user_input = ""
@@ -155,6 +237,7 @@ class CloneModel:
                 print(e)
                 print(traceback.format_exc())
         return
+
 
 
 if __name__ == '__main__':
