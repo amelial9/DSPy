@@ -17,18 +17,19 @@ def embedding_function(texts: List[str]) -> List[float]:
 
 lm = dspy.AzureOpenAI(
     api_base="https://bxaisc.openai.azure.com/",
+    api_key="9cd7d887a86a4f34932bd8f2231b1522",
     api_version="2023-05-15",
-    model="gpt-35-turbo",
-    api_key="9cd7d887a86a4f34932bd8f2231b1522"
+    deployment_id="gpt-35-turbo"
 )
 '''
 lm = dspy.AzureOpenAI(
-    api_base="https://bxaisc.openai.azure.com/",
-    api_version="2023-05-15",
+    api_base="https://openai-gtp4-baixing.openai.azure.com/",
+    api_version="2024-05-13",
     model="gpt-4o",
-    api_key="9cd7d887a86a4f34932bd8f2231b1522"
+    api_key="ba80dab708f34541894c844dd29071b3"
 )
 '''
+
 doc_rm = MilvusRM(
     collection_name='sensenova__piccolo_large_zh_file_index',
     uri="https://in01-f831c960b661326.tc-ap-shanghai.vectordb.zilliz.com.cn",
@@ -193,7 +194,7 @@ class CloneModel:
 
     def load_model(self, is_training=True):
 
-
+        '''
         baleen = SimplifiedBaleen()
         teleprompter = BootstrapFewShotWithRandomSearch(metric = llm_metric)
 
@@ -212,18 +213,20 @@ class CloneModel:
         '''
 
         rag = RAG()
-        teleprompter = BootstrapFewShot(metric = llm_metric)
+        teleprompter = BootstrapFewShotWithRandomSearch(metric=llm_metric, num_candidate_programs=1, num_threads=10)
+
         
         if is_training:
             train_set = self.load_train_data()
             test_set = self.load_test_data()
-            compiled_rag = teleprompter.compile(rag, trainset = test_set)
+
+            compiled_rag = teleprompter.compile(student=rag, trainset=train_set)
             compiled_rag.save("gao_clone.json")
         else:
             compiled_rag = RAG()
-            compiled_rag.load("gao_clone.json")
+            compiled_rag.load("gao_clone1.json")
         return compiled_rag
-        '''
+
 
     def run(self):
         user_input = ""
@@ -241,5 +244,5 @@ class CloneModel:
 
 
 if __name__ == '__main__':
-    clone_model = CloneModel(is_training=True)
+    clone_model = CloneModel(is_training=False)
     clone_model.run()
